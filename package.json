@@ -10,5 +10,8 @@
   },
   "dependencies": {
     "astro": "^5.14.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.8.4"
   }
 }
