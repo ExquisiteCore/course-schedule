@@ -26,6 +26,29 @@ interface WeekRange {
   evenOnly?: boolean;
 }
 
+// 格式化地点信息
+function formatLocation(location: string): string {
+  if (!location) return "";
+
+  // 匹配模式: JXF05010 -> JX(教学楼) F(F座) 05(楼层) 010(房间)
+  // 或 SXA03050 -> SX(实训楼) A(A座) 03(楼层) 050(房间)
+  const match = location.match(/^([A-Z]{2})([A-Z])(\d{2})(\d{2,3})$/);
+  if (!match) return location;
+
+  const [, prefix, building, floor, room] = match;
+
+  let buildingType = "";
+  if (prefix === "JX") {
+    buildingType = "教学楼";
+  } else if (prefix === "SX") {
+    buildingType = "实训楼";
+  } else {
+    return location;
+  }
+
+  return `${buildingType}${building}座${floor}${room}`;
+}
+
 const DAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 const SECTIONS = Array.from({ length: 12 }, (_, i) => i + 1);
 
@@ -333,7 +356,7 @@ export default function CourseSchedule() {
                                     </Show>
                                     <Show when={course().location}>
                                       <div class="text-gray-500 text-xs">
-                                        {course().location}
+                                        {formatLocation(course().location)}
                                       </div>
                                     </Show>
                                   </div>
