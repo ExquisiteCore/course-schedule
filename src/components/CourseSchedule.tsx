@@ -40,8 +40,8 @@ function parseWeeks(weekStr: string): WeekRange[] {
     const trimmed = part.trim();
     const oddMatch = trimmed.match(/(\d+)-(\d+)周\(单\)/);
     const evenMatch = trimmed.match(/(\d+)-(\d+)周\(双\)/);
-    const singleWeekMatch = trimmed.match(/^(\d+)周/);
     const rangeMatch = trimmed.match(/(\d+)-(\d+)周/);
+    const singleWeekMatch = trimmed.match(/(\d+)周/);
 
     if (oddMatch) {
       ranges.push({
@@ -55,14 +55,14 @@ function parseWeeks(weekStr: string): WeekRange[] {
         end: parseInt(evenMatch[2]),
         evenOnly: true
       });
-    } else if (singleWeekMatch) {
-      const week = parseInt(singleWeekMatch[1]);
-      ranges.push({ start: week, end: week });
     } else if (rangeMatch) {
       ranges.push({
         start: parseInt(rangeMatch[1]),
         end: parseInt(rangeMatch[2])
       });
+    } else if (singleWeekMatch) {
+      const week = parseInt(singleWeekMatch[1]);
+      ranges.push({ start: week, end: week });
     }
   }
 
@@ -93,6 +93,21 @@ export default function CourseSchedule() {
       const pdfPath = "C:\\Code\\course-schedule\\都书锐(2025-2026-1)课表.pdf";
       const result = await invoke<CourseSchedule>("parse_pdf", { path: pdfPath });
       setSchedule(result);
+
+      // 计算当前应该是第几周
+      const today = new Date();
+      const startDate = new Date(semesterStartDate());
+      const firstMonday = new Date(startDate);
+      const dayOfWeek = firstMonday.getDay();
+      const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      firstMonday.setDate(firstMonday.getDate() + daysToMonday);
+
+      const diffTime = today.getTime() - firstMonday.getTime();
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      const calculatedWeek = Math.floor(diffDays / 7) + 1;
+
+      // 设置为计算出的周次，但不小于1
+      setCurrentWeek(Math.max(1, calculatedWeek));
     } catch (err) {
       setError(err as string);
     } finally {
@@ -153,16 +168,20 @@ export default function CourseSchedule() {
     if (!sched) return null;
     const week = currentWeek();
 
-    return sched.courses.find(
-      (course) => {
-        if (course.day_of_week !== day) return false;
-        if (course.start_section > section || course.end_section < section) return false;
+    const course = sched.courses.find(
+      (c) => {
+        if (c.day_of_week !== day) return false;
+        if (c.start_section > section || c.end_section < section) return false;
 
         // 检查当前周是否在课程的周次范围内
-        const weekRanges = parseWeeks(course.weeks);
-        return isWeekInRange(week, weekRanges);
+        const weekRanges = parseWeeks(c.weeks);
+        const inRange = isWeekInRange(week, weekRanges);
+
+        return inRange;
       }
     );
+
+    return course;
   };
 
   const getCourseRowSpan = (course: Course) => {
@@ -245,10 +264,14 @@ export default function CourseSchedule() {
           >
             ←
           </button>
-          <div class="text-center">
+          <div class="text-center flex-1">
             <div class="text-lg font-semibold">第 {currentWeek()} 周</div>
             <div class="text-sm text-gray-600">
               {formatDate(weekDates()[0])} - {formatDate(weekDates()[6])}
+            </div>
+            <div class="text-xs text-gray-500 mt-1">
+              {/* 显示当前周有多少课程 */}
+              本周共 {schedule()!.courses.filter(c => isWeekInRange(currentWeek(), parseWeeks(c.weeks))).length} 门课
             </div>
           </div>
           <button
@@ -286,35 +309,39 @@ export default function CourseSchedule() {
                     </td>
                     <For each={[1, 2, 3, 4, 5, 6, 7]}>
                       {(day) => {
-                        if (shouldSkipCell(day, section)) {
-                          return null;
-                        }
+                        // 使用函数调用确保响应式
+                        const getCourse = () => getCourseAt(day, section);
+                        const skipCell = () => shouldSkipCell(day, section);
 
-                        const course = getCourseAt(day, section);
-                        if (course) {
-                          return (
-                            <td
-                              class="border border-gray-300 px-2 py-2 bg-blue-50"
-                              rowspan={getCourseRowSpan(course)}
+                        return (
+                          <Show when={!skipCell()} fallback={null}>
+                            <Show
+                              when={getCourse()}
+                              fallback={<td class="border border-gray-300 px-2 py-2 min-h-[80px]"></td>}
                             >
-                              <div class="text-sm">
-                                <div class="font-semibold text-blue-900">
-                                  {course.name}
-                                </div>
-                                <Show when={course.teacher}>
-                                  <div class="text-gray-600">{course.teacher}</div>
-                                </Show>
-                                <Show when={course.location}>
-                                  <div class="text-gray-500 text-xs">
-                                    {course.location}
+                              {(course) => (
+                                <td
+                                  class="border border-gray-300 px-2 py-2 bg-blue-50"
+                                  rowspan={getCourseRowSpan(course())}
+                                >
+                                  <div class="text-sm">
+                                    <div class="font-semibold text-blue-900">
+                                      {course().name}
+                                    </div>
+                                    <Show when={course().teacher}>
+                                      <div class="text-gray-600">{course().teacher}</div>
+                                    </Show>
+                                    <Show when={course().location}>
+                                      <div class="text-gray-500 text-xs">
+                                        {course().location}
+                                      </div>
+                                    </Show>
                                   </div>
-                                </Show>
-                              </div>
-                            </td>
-                          );
-                        }
-
-                        return <td class="border border-gray-300 px-2 py-2 min-h-[80px]"></td>;
+                                </td>
+                              )}
+                            </Show>
+                          </Show>
+                        );
                       }}
                     </For>
                   </tr>
